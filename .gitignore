@@ -1,5 +1,13 @@
+# data that must be downloaded (see README)
 data/raw/CUADv1.json
 data/processed/
+# local environment
+.venv/
 __pycache__/
 *.pyc
 .env
+.DS_Store
+.pytest_cache/
+.streamlit/secrets.toml
+results/openrouter_prices_live.json
+results/fm_debug.jsonl

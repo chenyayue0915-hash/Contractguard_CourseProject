@@ -3,7 +3,8 @@ Produces the numbers used to FREEZE settings before the one-shot test run:
   - hit@k for k = 1, 3, 5, 10, 20
   - contract-level threshold sweep (recall / precision / FP chunks)
   - T_BYPASS: lowest score whose chunk "touch" precision >= 0.8 (ML may FLAG without the FM)
-  - candidate coverage for top-N + keyword hits (how many chunks the FM must verify)."""
+  - candidate coverage for top-N + keyword hits (how many chunks the FM must verify)
+  - T_REVIEW_ML: REVIEW threshold for ML-only mode (app without an API key)."""
 import json, numpy as np, pandas as pd
 from sklearn.model_selection import StratifiedGroupKFold
 from common import SEED, K_BROAD, load_dev, fit_lr
@@ -38,4 +39,11 @@ if __name__ == "__main__":
     cov = pd.DataFrame(cov); print(cov.round(1).to_string(index=False)); print("T_BYPASS =", t_bypass)
     c[["contract_id", "chunk_id", "label", "bucket", "oof"]].to_csv("results/dev_oof.csv.gz", index=False)
     sweep.to_csv("results/dev_threshold_sweep.csv", index=False); cov.to_csv("results/dev_candidates.csv", index=False)
-    json.dump({"T_BYPASS": t_bypass, "N_CAND": 20}, open("results/frozen_settings.json", "w"), indent=2)
+    # ML-only mode (no FM): REVIEW threshold = highest score that still surfaces >= 90% of dev LD contracts
+    t_review_ml = float(sweep[sweep.c_recall >= 0.90].thr.max())
+    print("T_REVIEW_ML =", t_review_ml)
+    path = "results/frozen_settings.json"
+    try: frozen = json.load(open(path))
+    except FileNotFoundError: frozen = {}
+    frozen.update({"T_BYPASS": t_bypass, "N_CAND": 20, "T_REVIEW_ML": t_review_ml})   # keeps hybrid keys if present
+    json.dump(frozen, open(path, "w"), indent=2)

@@ -1,0 +1,7 @@
+system,type,n,FLAG,REVIEW,NO_FLAG
+keyword,hard_negative,20,0.0,0.0,1.0
+keyword,injection_ld,10,0.3,0.0,0.7
+keyword,paraphrase_ld,20,0.25,0.0,0.75
+ml_only,hard_negative,20,0.0,0.05,0.95
+ml_only,injection_ld,10,0.3,0.4,0.3
+ml_only,paraphrase_ld,20,0.1,0.35,0.55

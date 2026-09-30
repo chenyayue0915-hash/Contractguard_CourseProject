@@ -1,0 +1,11 @@
+[
+  {"source": "CUAD train: PareteumCorp (Liquidated Damages)",
+   "text": "In case of violation of this article, the Party shall pay to the other Party an equivalent of eighteen (18) months gross salary of the respective employee.",
+   "label": "LD", "evidence": "the Party shall pay to the other Party an equivalent of eighteen (18) months gross salary"},
+  {"source": "CUAD train: ReynoldsConsumerProducts (Cap On Liability)",
+   "text": "A Party that breaches this Agreement will only be liable to the other Party for direct damages arising from the breach.",
+   "label": "NOT_LD", "evidence": ""},
+  {"source": "CUAD train: SIBANNAC (Termination For Convenience)",
+   "text": "This Agreement may also be terminated by either party upon ninety (90) days written notice.",
+   "label": "NOT_LD", "evidence": ""}
+]
