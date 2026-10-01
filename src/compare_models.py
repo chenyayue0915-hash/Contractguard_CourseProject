@@ -3,6 +3,7 @@ development subset, and put quality, cost and speed side by side. Test contracts
 
     python src/compare_models.py                      # dev subset: 47 LD + 60 non-LD train contracts
     python src/compare_models.py --prompt few --full  # all 408 train contracts
+    python src/compare_models.py --only google/gemini-2.5-flash-lite --samples 3   # self-consistency (3 answers, vote)
     python src/compare_models.py --contracts-per-month 4000
 
 Output: results/model_comparison.csv and results/model_comparison.md (paste-ready table for the report).
@@ -54,10 +55,12 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--prompt", choices=["zero", "few"], default="zero")
     ap.add_argument("--full", action="store_true")
+    ap.add_argument("--samples", type=int, default=1, help="self-consistency: N answers per call, majority vote (N x cost)")
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--contracts-per-month", type=int, default=4000, help="scenario: e.g. 1,000 SMEs x 4 contracts")
     ap.add_argument("--only", nargs="*", help="run only these model ids")
     a = ap.parse_args()
+    plabel = a.prompt if a.samples == 1 else f"{a.prompt} x{a.samples} vote"   # row key in model_comparison.csv
     cfg = load_models(); settings = load_settings()
     df, contracts = eh.scored_split("dev"); df, contracts = subset(df, contracts, a.full)
     n_ld = int(contracts.has_ld.sum()); print(f"dev subset: {len(contracts)} contracts, {n_ld} with LD")
@@ -78,12 +81,12 @@ if __name__ == "__main__":
             continue
         if live and not live[mid]["tools"]:
             print(f"SKIP {mid}: OpenRouter lists no tool-calling support for it"); continue
-        fm = FMVerifier(model=mid, prompt=a.prompt, provider=cfg.get("provider", "openrouter"),
+        fm = FMVerifier(model=mid, prompt=a.prompt, samples=a.samples, provider=cfg.get("provider", "openrouter"),
                         cache_path=RES / "fm_cache.jsonl", log_path=RES / "fm_calls.jsonl")
         if not fm.live and not fm.cache:
             from config import key_problem
             sys.exit(key_problem() or "OPENROUTER_API_KEY is missing.")
-        print(f"\nRunning {mid} ({a.prompt}-shot) on {len(contracts)} contracts ...", flush=True)
+        print(f"\nRunning {mid} ({plabel}) on {len(contracts)} contracts ...", flush=True)
         lat, outs = prefetch(df, settings, fm, a.workers)
         best, _, avoid = eh.tune(df, contracts, settings, fm)
         res, _ = eh.run(df, contracts, dict(settings, **best), fm)
@@ -91,12 +94,13 @@ if __name__ == "__main__":
         repairs = sum(1 for o in outs if o.get("repaired"))
         if not lat:                                               # everything cached: use logged latencies
             log = [json.loads(l) for l in open(RES / "fm_calls.jsonl")] if (RES / "fm_calls.jsonl").exists() else []
-            lat = [r["latency_s"] for r in log if r.get("model") == mid and not r.get("cached")]
+            lat = [r["latency_s"] for r in log if r.get("model") == mid and not r.get("cached")
+                   and r.get("samples", 1) == a.samples]
         calls = [o for o in outs]
         if lat:                                                   # real API latency, not the near-zero cache replays
             s["latency_p50_s"], s["latency_p95_s"] = float(np.median(lat)), float(np.percentile(lat, 95))
         pr = ptab.get(mid, {})
-        rows.append({"model": mid, "label": m.get("label", mid), "tier": m.get("tier", ""), "prompt": a.prompt,
+        rows.append({"model": mid, "label": m.get("label", mid), "tier": m.get("tier", ""), "prompt": plabel,
                      "official_in": pr.get("official_in"), "official_out": pr.get("official_out"),
                      "openrouter_in": pr.get("openrouter_in"), "openrouter_out": pr.get("openrouter_out"),
                      "price_note": pr.get("official_note", ""),

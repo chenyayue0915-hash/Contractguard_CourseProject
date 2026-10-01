@@ -236,21 +236,6 @@ class FMVerifier:
             if e: err = e; break
             runs.append(validate(ti, passages))
         repaired = False
-        if not err and len(runs) == 1 and runs[0][0] != "ok":
-            # Repair: weaker models sometimes return an empty or incomplete list. Ask again for the missing ids only,
-            # first all together, then in batches of 5 (small batches are answered far more reliably).
-            merged = dict(runs[0][1])
-            missing = [(cid, t) for cid, t in passages if cid not in merged]
-            batches = [missing] + [missing[k:k + 5] for k in range(0, len(missing), 5)] if len(missing) > 5 else [missing]
-            for n_try, batch in enumerate(batches):
-                batch = [(cid, t) for cid, t in batch if cid not in merged]
-                if not batch: continue
-                ti2, i2, o2, c2, cached2, e2 = self._one(build_user_message(batch), 100 + n_try, len(batch))
-                tin += i2; tout += o2; cost += c2; cached_all &= cached2
-                if not e2:
-                    merged.update(validate(ti2, batch)[1])
-            runs = [("ok" if len(merged) == len(passages) else "partial", merged)]; repaired = True
-        latency = time.time() - t0
         if err or not runs:
             status, results = (err or "api_error"), {}
         elif len(runs) == 1:
@@ -266,6 +251,21 @@ class FMVerifier:
                 results[cid] = {"label": lab, "confidence": sum(v["confidence"] for v in same) / len(votes),
                                 "evidence": ev["evidence"], "valid": ev["valid"]}
             status = "ok" if len(results) == len(passages) else "partial"
+        if not err and runs and status != "ok":
+            # Repair: weaker models sometimes return an empty or incomplete list. Ask again for the missing ids only,
+            # first all together, then in batches of 5 (small batches are answered far more reliably).
+            merged = dict(results)
+            missing = [(cid, t) for cid, t in passages if cid not in merged]
+            batches = [missing] + [missing[k:k + 5] for k in range(0, len(missing), 5)] if len(missing) > 5 else [missing]
+            for n_try, batch in enumerate(batches):
+                batch = [(cid, t) for cid, t in batch if cid not in merged]
+                if not batch: continue
+                ti2, i2, o2, c2, cached2, e2 = self._one(build_user_message(batch), 100 + n_try, len(batch))
+                tin += i2; tout += o2; cost += c2; cached_all &= cached2
+                if not e2:
+                    merged.update(validate(ti2, batch)[1])
+            results, status, repaired = merged, ("ok" if len(merged) == len(passages) else "partial"), True
+        latency = time.time() - t0
         out = {"status": status, "results": results, "in_tokens": tin, "out_tokens": tout,
                "cost_usd": cost, "latency_s": latency, "cached": cached_all and not err, "repaired": repaired}
         if self.log_path:

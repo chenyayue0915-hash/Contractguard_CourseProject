@@ -1,6 +1,6 @@
 {
   "provider": "openrouter",
-  "default_model": "anthropic/claude-haiku-4.5",
+  "default_model": "meta-llama/llama-3.3-70b-instruct",
   "prices_checked_on": "2026-09-29",
   "price_unit": "USD per 1M tokens (standard / pay-as-you-go tier)",
   "typical_call": {

@@ -65,10 +65,15 @@ with st.sidebar:
     labels = {m["id"]: m.get("label", m["id"]) for m in cfg["candidates"]}
     tiers = {m["id"]: m.get("tier", "") for m in cfg["candidates"]}
     options = list(labels) + ["Other (type an OpenRouter model id)"]
-    default = options.index(cfg["default_model"]) if cfg["default_model"] in options else 0
+    frozen_model = S.get("MODEL", cfg["default_model"])                      # the model the thresholds were tuned for
+    default = options.index(frozen_model) if frozen_model in options else 0
     choice = st.selectbox("Model", options, index=default,                   # always selectable, so prices can be compared
-                          format_func=lambda m: f"{labels[m]} · {tiers[m]}" if m in labels else m)
+                          format_func=lambda m: (f"{labels[m]} · {tiers[m]}" + (" · frozen" if m == frozen_model else ""))
+                          if m in labels else m)
     model = st.text_input("OpenRouter model id", value="") if choice.startswith("Other") else choice
+    if model and model != frozen_model and "MODEL" in S:
+        st.warning(f"The REVIEW / FLAG thresholds were tuned for {labels.get(frozen_model, frozen_model)}. "
+                   "Another model works, but its labels are not the evaluated configuration.")
     use_fm = st.toggle("FM verification", value=bool(key), disabled=not key,
                        help="Sends about 20 candidate passages to the chosen model in one call.")
     if not key:
@@ -92,7 +97,8 @@ with st.sidebar:
         st.caption(f"Prices: {psrc if psrc.startswith('live') else 'snapshot ' + cfg.get('prices_checked_on', '')}. "
                    "Refresh with: python src/prices.py --refresh")
     st.caption(f"Frozen on the development split: FLAG without FM at ML score ≥ {S['T_BYPASS']}, "
-               f"{S['N_CAND']} candidates + keyword hits, prompt: {S.get('PROMPT', 'few')}.")
+               f"{S['N_CAND']} candidates + keyword hits, prompt: {S.get('PROMPT', 'few')}, "
+               f"FLAG needs FM confidence ≥ {S.get('FM_CONF')} and ML score ≥ {S.get('T_FLAG_MIN')}.")
     if "T_REVIEW_frozen" not in S:
         st.caption("Hybrid REVIEW threshold not tuned yet (run evaluate_hybrid.py --split dev --freeze).")
 

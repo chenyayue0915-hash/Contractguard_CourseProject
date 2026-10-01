@@ -70,7 +70,8 @@ def cost_rows(df, cfg, n_month):
         reviews = ld * c["ld_review"] + non * c["non_review"]; missed = ld * c["ld_silent"]
         fm = r["cost_per_contract_usd"] * n_month
         rev_cost = reviews * review_unit_cost(cfg); false_cost = flags_false * lawyer; miss_cost = missed * loss
-        rows.append({"system": r["label"] + (f" ({r['prompt']}-shot)" if isinstance(r.get("prompt"), str) and r.get("prompt") else ""),
+        pr = r.get("prompt") if isinstance(r.get("prompt"), str) else ""
+        rows.append({"system": r["label"] + ((f" ({pr}-shot)" if pr in ("zero", "few") else f" ({pr})") if pr else ""),
                      "flags_needed": flags_true, "flags_unneeded": flags_false, "reviews": reviews, "missed_ld": missed,
                      "fm_spend": fm, "review_time_cost": rev_cost, "unneeded_lawyer_cost": false_cost,
                      "expected_loss_missed": miss_cost, "total_avoidable_cost": fm + rev_cost + false_cost + miss_cost})

@@ -62,17 +62,17 @@ python src/oof_analysis.py                          # DEV  thresholds -> results
 python src/official_eval.py                         # TEST once: keyword vs ML baselines, bootstrap CI, saves the model
 python src/stress_eval.py                           # stress set, ML-only (no key needed)
 # FM steps (need OPENROUTER_API_KEY in .env the first time; later runs are served from results/fm_cache.jsonl):
-python src/compare_models.py                                       # business trade-off: every model in config/models.json
-python src/evaluate_hybrid.py --split dev --prompt zero            # prompt ladder, rung 1 (default model)
-python src/evaluate_hybrid.py --split dev --prompt few             # rung 2
-python src/evaluate_hybrid.py --split dev --prompt few --model openai/gpt-5-mini   # any OpenRouter id
-python src/evaluate_hybrid.py --split dev --prompt few --model <chosen> --freeze   # freeze model + prompt + T_REVIEW
-python src/evaluate_hybrid.py --split test                         # TEST once with frozen settings
-python src/stress_eval.py --fm                                     # stress set with the hybrid
+python src/compare_models.py --only google/gemini-2.5-flash-lite                  # model comparison on the dev subset
+python src/compare_models.py --only google/gemini-2.5-flash-lite --prompt few     # prompt technique: few-shot
+python src/compare_models.py --only google/gemini-2.5-flash-lite --samples 3      # prompt technique: self-consistency
+python src/compare_models.py --only meta-llama/llama-3.3-70b-instruct anthropic/claude-haiku-4.5
+python src/evaluate_hybrid.py --split dev --prompt zero --model meta-llama/llama-3.3-70b-instruct --workers 8 --freeze
+python src/evaluate_hybrid.py --split test --workers 8                            # TEST once with frozen settings
+python src/stress_eval.py --fm                                                    # stress set with the hybrid
 ```
 
-A full dev run costs about US$3 with a Haiku-class model; every call is logged to `results/fm_calls.jsonl`
-(model, tokens, billed cost, latency) and cached, so anyone can re-run the numbers without a key.
+Every FM call is logged to `results/fm_calls.jsonl` (model, tokens, billed cost, latency) and cached in
+`results/fm_cache.jsonl`, so anyone can re-run every number above without a key and without paying.
 
 ### Business trade-off: model comparison
 `src/compare_models.py` runs the same pipeline with each enabled model on a fixed development subset (all 47 LD train
@@ -87,7 +87,8 @@ python src/business_case.py     # cost to serve per month: FM spend + owner revi
 python src/make_report.py       # results/report_tables.md + figures/fig1..3.png (ladder, model trade-off, monthly cost)
 ```
 `config/business.json` holds every business assumption (contracts per month, minutes per review, hourly value, lawyer
-consult cost, loss per missed clause) with its source or an ASSUMPTION tag. The REVIEW / FLAG thresholds are chosen on
+consult cost, loss per missed clause, share of REVIEW cases that still end with a lawyer) with its source or an
+ASSUMPTION tag. The REVIEW / FLAG thresholds are chosen on
 the development split by minimising that cost, with at most 5% of LD contracts allowed to end as NO_FLAG.
 
 ### Train / test discipline
@@ -119,27 +120,49 @@ Only `official_eval.py` and `evaluate_hybrid.py --split test` call `load_test()`
 | `demo/` | two CUAD test contracts and a fictional catering supply contract (with and without an injection) |
 | `tests/` | pytest suite |
 
-## Results so far
+## Results
 
-Official test (102 contracts, 14 with LD, 23 spans), scored once. Headline = **hit@5**: share of LD contracts where
-at least one of the 5 passages shown is a real LD clause (a fixed review budget, so "flag everything" cannot win).
+All tables and figures: `results/report_tables.md` and `figures/` (rebuilt by `python src/make_report.py`).
 
-| system | hit@5 (95% CI) | contract precision | FP chunks per non-LD contract |
-|---|---|---|---|
-| keyword "liquidated damages" | 8/14 [0.29, 0.79] | 1.00 | 0.00 |
-| keyword broad | 8/14 [0.36, 0.86] | 0.28 | 1.08 |
-| ML trained on clean spans only (Milestone-1 design) | 8/14 [0.29, 0.86] | 0.18 | 3.76 |
-| **ML trained on all chunks** | **11/14 [0.57, 1.00]** | 0.89 | 0.02 |
-| ML with label words masked (leakage check) | 8/14 [0.29, 0.79] | 0.58 | 0.07 |
-| hybrid (ML + FM) | *pending — `evaluate_hybrid.py --split test`* | | |
+**Official test set** (102 contracts, 14 with LD, 23 spans), scored once with settings frozen on the 408 development
+contracts. hit@5 = share of LD contracts where at least one of the 5 passages shown is a real LD clause (recall at a fixed
+review budget, so "flag everything" cannot win); a *silent miss* is an LD contract labelled NO_FLAG.
 
-Stress set, ML only: 11 of 20 paraphrased LD clauses and 3 of 10 injected ones end as NO_FLAG (silent misses), which
-is the gap the FM step is meant to close. Dev CV (408 contracts): ML hit@5 0.88 ± 0.11.
+| system | hit@5 [95% CI] | silent misses | FLAG precision | sent to a person | FM cost / contract |
+|---|---|---|---|---|---|
+| keyword "liquidated damages" | 8/14 [0.29, 0.79] | 7/14 | 100% | 0% | $0 |
+| keyword broad list | 8/14 [0.36, 0.86] | 3/14 | 28% | 0% | $0 |
+| ML only (TF-IDF + LR, all chunks as negatives) | 11/14 [0.57, 1.00] | 2/14 | 100% | 27% | $0 |
+| **hybrid: ML + Llama 3.3 70B, zero-shot (frozen)** | **13/14 [0.79, 1.00]** | **0/14** | **100%** | 40% | $0.0011 |
+
+![technique ladder](figures/fig1_ladder_test.png)
+
+**Negative examples** (dev 5-fold CV): training only on other annotated clauses gives 7.1 false-positive chunks per
+non-LD contract; adding unannotated boilerplate chunks as negatives cuts that to 0.07 and raises hit@5 from 0.83 to 0.88.
+
+**Choice of FM** (dev subset of 107 train contracts, all 47 with LD + 60 without): Gemini 2.5 Flash-Lite, Llama 3.3 70B
+and Claude Haiku 4.5 all reach 0 silent misses; what separates them is how many contracts still need a person.
+Llama 3.3 70B has the lowest avoidable cost per contract ($25.81 vs $31.37 Flash-Lite and $30.20 Haiku) at
+$0.0011 of FM spend, but takes about 20 s per contract; Haiku costs 7x more per call without fewer reviews.
+GPT-5.6 Luna could not be used: no OpenRouter provider served it with forced tool calling. Zero-shot beat few-shot.
+
+![model trade-off](figures/fig2_model_tradeoff.png)
+
+**Cost to serve** (4,000 contracts a month, assumptions in `config/business.json`): ML only ≈ $297k of avoidable cost a
+month, mostly expected losses from about 41 missed LD contracts; the hybrid ≈ $103k, all of it REVIEW handling, while
+FM spend is under $5 a month. The ranking holds when the loss per missed clause is $1k or $20k and when 0% or 50% of
+REVIEW cases end with a lawyer.
+
+![monthly cost](figures/fig3_monthly_cost.png)
+
+**Stress set** (50 clauses written before any run): the hybrid misses none of 20 paraphrased LD clauses or 10 LD clauses
+carrying injected instructions (ML only: 11/20 and 3/10 silent misses) and flags none of 20 hard negatives.
 
 ## Limitations
 CUAD contains contracts filed by US public companies, not SME agreements (the vendor-type subset is small: 30 test
-contracts, 4 with LD). The test set holds only 14 LD contracts, so one contract moves hit@5 by 7 points. The stress set
-was drafted with AI assistance and the FM is from the same model family. NO_FLAG is not a clearance.
+contracts, 4 with LD). The test set holds only 14 LD contracts, so one contract moves hit@5 by 7 points. Models were compared
+on a dev subset with only 60 non-LD contracts, so REVIEW-rate differences of a few points between them are within noise.
+Business figures rest on stated assumptions, not measured SME costs. The stress set was drafted with AI assistance. NO_FLAG is not a clearance.
 
 ## Licence and attribution
 Code: written by Chen Yayue for NTU PE6201 (no open-source licence chosen yet). Data: CUAD v1 by The Atticus Project, CC BY 4.0 — processed files and excerpts in `demo/` are derived from it.

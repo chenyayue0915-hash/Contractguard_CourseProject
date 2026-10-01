@@ -109,6 +109,19 @@ def test_empty_answer_is_repaired_with_second_call():
     f = Flaky(); out = FMVerifier(client=f).verify(PASSAGES)
     assert out["status"] == "ok" and out["repaired"] and f.calls == 2 and out["cost_usd"] == pytest.approx(0.002)
 
+def test_self_consistency_votes_and_repairs_missing_ids():
+    class Voter:                      # 3 samples: two say LD for chunk 1, one says NOT_LD; chunk 0 missing from every sample
+        def __init__(self): self.n = 0
+        def call(self, model, system, user, max_tokens, temperature):
+            self.n += 1; ids = [int(x) for x in re.findall(r'<passage id="(\d+)">', user)]
+            if ids == [0]: return {"results": [{"chunk_id": 0, "label": "NOT_LD", "confidence": 0.9, "evidence": ""}]}, 10, 5, 0.0
+            lab = "NOT_LD" if self.n == 2 else "LD"
+            return {"results": [{"chunk_id": 1, "label": lab, "confidence": 0.8,
+                                 "evidence": "early termination fee" if lab == "LD" else ""}]}, 10, 5, 0.0
+    c = Voter(); out = FMVerifier(client=c, samples=3).verify(PASSAGES)
+    assert out["status"] == "ok" and out["repaired"] and c.n == 4
+    assert out["results"][1]["label"] == "LD" and out["results"][0]["label"] == "NOT_LD"
+
 def test_prompt_lists_every_id():
     assert "ids: 0, 1" in build_user_message(PASSAGES)
 

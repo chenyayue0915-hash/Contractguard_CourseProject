@@ -35,6 +35,33 @@ def class_rates(labels, has_ld):
             "ld_silent": ld.count("NO_FLAG") / len(ld), "non_flag": non.count("FLAG") / len(non),
             "non_review": non.count("REVIEW") / len(non)}
 
+def data_design_section():
+    """Answers the DATA feedback: which negatives the classifier is trained on, measured on dev (CV) and test."""
+    cvp, tp = RES / "dev_cv_summary.csv", RES / "test_results.csv"
+    if not (cvp.exists() and tp.exists()): return []
+    cv = pd.read_csv(cvp, header=[0, 1], index_col=0); te = pd.read_csv(tp, index_col=0)
+    names = {"M1_span_negatives": "Negatives = other annotated CUAD clauses only (Milestone-1 design)",
+             "M2_chunk_level": "Negatives = every non-LD chunk, incl. unannotated boilerplate (chosen)",
+             "M2_masked": "Same, with the words 'liquidated damages' masked (leakage check)",
+             "keyword_literal": "Keyword rule: \"liquidated damages\"", "keyword_broad": "Keyword rule: broad list"}
+    rows = []
+    for k, name in names.items():
+        if k not in cv.index or k not in te.index: continue
+        f = lambda col: f"{cv.loc[k, (col, 'mean')]:.2f} ± {cv.loc[k, (col, 'std')]:.2f}"
+        rows.append({"design": name, "cv_hit": f("hit@5_rate"), "cv_prec": f("c_prec"), "cv_fp": f("FP_chunks/nonLD"),
+                     "te_hit": te.loc[k, "hit@5"], "te_prec": f"{te.loc[k, 'c_prec']:.2f}", "te_fp": f"{te.loc[k, 'FP_chunks/nonLD']:.2f}"})
+    return ["## 1b. Negative examples and metrics (response to the DATA and OUTCOME METRICS feedback)", "",
+            "Every contract is cut into 100-word chunks; a chunk is positive if it overlaps an LD span, a *hard negative* if "
+            "it overlaps another CUAD clause type, and a *boilerplate negative* if it overlaps no annotation at all. "
+            "Training only on annotated spans ignores the boilerplate that makes up most of a real contract.", "",
+            "Recall alone is won by flagging everything, so each metric is paired with a cost of being wrong: **hit@5** is "
+            "recall at a fixed review budget (5 passages per contract), reported next to contract-level precision and false "
+            "positive chunks per non-LD contract; for the routed system, silent misses (LD contract labelled NO_FLAG) are "
+            "capped at 5% on dev and FLAG precision and REVIEW rate are reported beside them.", "",
+            md_table(pd.DataFrame(rows), ["design", "cv_hit", "cv_prec", "cv_fp", "te_hit", "te_prec", "te_fp"],
+                     ["design", "dev 5-fold CV hit@5", "dev contract precision", "dev FP chunks / non-LD contract",
+                      "test hit@5", "test contract precision", "test FP chunks / non-LD contract"]), ""]
+
 def ladder_rows(cfg):
     """Keyword and ML-only systems re-labelled on the official test set with FROZEN settings (no tuning here)."""
     te, tec, _ = load_test(); s = load_settings()
@@ -152,6 +179,7 @@ if __name__ == "__main__":
                      ["system", "hit@5 [95% CI]", "LD contracts missed silently", "FLAG precision", "sent to a person",
                       "FM cost / contract", "avoidable cost / contract"]), ""]
     if not has_hybrid: out += ["TODO: hybrid row appears after `python src/evaluate_hybrid.py --split test`.", ""]
+    out += data_design_section()
     fig_ladder(lad)
     mcp = RES / "model_comparison.csv"
     if mcp.exists():
@@ -188,20 +216,28 @@ if __name__ == "__main__":
                     f"T_FLAG_MIN={s.get('T_FLAG_MIN')}) it scores hit@5 {d['hit@5']}, {d['silent_miss']} missed silently, "
                     f"FLAG precision {pct(d['flag_precision'])}, avoidable cost {usd(av)} per contract. The subset above (60 "
                     "non-LD contracts) is only used to rank models; differences of a few points in REVIEW rate are within noise.", ""]
-        pairs = mc[mc.prompt.isin(["zero", "few"])].groupby("model").filter(lambda g: g.prompt.nunique() == 2)
-        out += ["## 3. Prompt techniques (Class 3)", ""]
-        if len(pairs):
-            out += [md_table(pairs.assign(cost=pairs.cost_per_contract_usd.map(usd), fp=pairs.flag_precision.map(pct)),
-                             ["label", "prompt", "hit@5", "silent_miss", "fp", "cost"],
-                             ["model", "prompt", "hit@5", "missed silently", "FLAG precision", "FM cost / contract"]), ""]
+        variants = mc[(mc.prompt != "") & ~bad].groupby("model").filter(lambda g: g.prompt.nunique() >= 2)
+        out += ["## 3. Prompt techniques (Class 3)", "",
+                "All rows use the same structured-output contract: a forced `report_labels` tool (JSON schema), re-validated in "
+                "code, and an LD answer only counts when its evidence is an exact quote from the passage.", ""]
+        if len(variants):
+            v = variants.assign(cost=variants.cost_per_contract_usd.map(usd), fp=variants.flag_precision.map(pct),
+                                rv=variants.abstention_rate.map(pct), fmp=variants.fm_precision.map(pct),
+                                fmr=variants.fm_recall.map(pct), avoid=variants.avoidable_cost_per_contract.map(usd),
+                                lat=variants.apply(lambda r: "" if pd.isna(r.get("latency_p50_s")) else f"{r['latency_p50_s']:.1f} s", axis=1))
+            out += [md_table(v, ["label", "prompt", "hit@5", "silent_miss", "rv", "fmp", "fmr", "cost", "lat", "avoid"],
+                             ["model", "prompt technique", "hit@5", "missed silently", "sent to a person", "FM precision",
+                              "FM recall", "FM cost / contract", "latency p50", "avoidable cost / contract"]), ""]
         else:
             out += ["TODO: run `python src/compare_models.py --only <model> --prompt few` for a model already run zero-shot.", ""]
-        cheap = mc[mc.cost_per_contract_usd > 0]
-        if len(cheap):
-            r = cheap.sort_values("cost_per_contract_usd").iloc[0]
-            out += [f"Self-consistency (3 samples, majority vote) was not run; it triples the FM calls, so for {r['label']} the FM cost "
-                    f"would rise from {usd(r['cost_per_contract_usd'])} to about {usd(3 * r['cost_per_contract_usd'])} per contract "
-                    "(and latency roughly triples if the samples run one after another).", ""]
+        if not mc.prompt.astype(str).str.contains("vote").any():
+            cheap = mc[(mc.cost_per_contract_usd > 0) & ~bad]
+            if len(cheap):
+                r = cheap.sort_values("cost_per_contract_usd").iloc[0]
+                out += [f"Self-consistency (3 samples, majority vote) was not run; it triples the FM calls, so for {r['label']} "
+                        f"the FM cost would rise from {usd(r['cost_per_contract_usd'])} to about "
+                        f"{usd(3 * r['cost_per_contract_usd'])} per contract (and latency roughly triples). Run: "
+                        "`python src/compare_models.py --only <model> --samples 3`.", ""]
         fig_tradeoff(mc[~bad])
         bc = cost_rows(mc, cfg, cfg["contracts_per_month"]["value"])
         out += ["## 4. Business case: cost to serve (Class 5)", "", (RES / "business_case.md").read_text() if (RES / "business_case.md").exists()
