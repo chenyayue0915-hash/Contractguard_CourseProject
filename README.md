@@ -13,7 +13,7 @@ Data: [CUAD v1](https://github.com/TheAtticusProject/cuad) (The Atticus Project,
 * [`docs/PRODUCT.md`](docs/PRODUCT.md): persona, input and output, architecture diagram, metrics targeted vs reached, risks.
 * [`data/README.md`](data/README.md): the data, and how it was labelled.
 * [`eval/README.md`](eval/README.md): every evaluation and how to read it.
-* [`results/report_tables.md`](results/report_tables.md): all numbers used in the report.
+* [`results/report_tables.md`](results/report_tables.md): all numbers used in the report ([`results/README.md`](results/README.md) explains every result file).
 
 ## How it works
 
