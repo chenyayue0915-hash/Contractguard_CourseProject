@@ -8,6 +8,13 @@ It flags only. It does not rewrite clauses, judge enforceability, or give legal 
 Data: [CUAD v1](https://github.com/TheAtticusProject/cuad) (The Atticus Project, CC BY 4.0), official split:
 408 train contracts (development) and 102 test contracts (scored once).
 
+**Start here:**
+
+* [`docs/PRODUCT.md`](docs/PRODUCT.md): persona, input and output, architecture diagram, metrics targeted vs reached, risks.
+* [`data/README.md`](data/README.md): the data, and how it was labelled.
+* [`eval/README.md`](eval/README.md): every evaluation and how to read it.
+* [`results/report_tables.md`](results/report_tables.md): all numbers used in the report.
+
 ## How it works
 
 ```
@@ -26,14 +33,22 @@ if its `evidence` is an exact quote from that passage.
 
 ## Quick start
 
+Needs **Python 3.10 or newer** (tested on 3.11; macOS's built-in Python 3.9 is too old for scikit-learn 1.8, which
+the saved model needs).
+
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
+conda create -n contractguard python=3.11 -y
+conda activate contractguard
 pip install -r requirements.txt
-cp .env.example .env          # then paste your OpenRouter key after OPENROUTER_API_KEY=
-streamlit run app.py          # pick a model in the sidebar, try the files in demo/
-python src/prices.py --refresh  # current prices of every candidate model -> results/price_table.md
-pytest -q                     # 25 tests: chunker, decision rules, FM guardrails, OpenRouter parsing, prices, extraction, split
+cp .env.example .env
+streamlit run app.py
+pytest -q
 ```
+
+After `cp .env.example .env`, paste your OpenRouter key after `OPENROUTER_API_KEY=` (optional). `streamlit run app.py`
+opens the app in the browser; try the files in `demo/`. Without a key it runs the ML model only. `pytest -q` runs 33
+tests covering the chunker, decision rules, FM guardrails, OpenRouter parsing, prices, extraction and the split.
+(`python3 -m venv .venv && source .venv/bin/activate` works instead of conda if your `python3` is 3.10+.)
 
 **API key.** Keys live only in `.env`, which is in `.gitignore`, so they never reach GitHub (`.env.example` is the
 committed template). The app also accepts a key typed into the sidebar for the current browser session only.
@@ -52,8 +67,9 @@ the evaluation is always the amount OpenRouter actually billed for each call.
 
 ## Reproduce the evaluation
 
-Put `CUADv1.json` in `data/raw/` (download from the CUAD repository). `data/raw/test_titles.json` lists the 102
-official test contracts (taken from CUAD's `test.json`).
+The data is in the repository (`data/raw/CUADv1.json`, CC BY 4.0; see `data/README.md`). `data/raw/test_titles.json`
+lists the 102 official test contracts (taken from CUAD's `test.json`). Every FM answer is cached in
+`results/fm_cache.jsonl`, so the commands below reproduce every number without a key or any spend.
 
 ```bash
 python src/prepare_data.py                          # chunk + label every contract: pos / hard_neg / boiler_neg
@@ -66,6 +82,7 @@ python src/compare_models.py --only google/gemini-2.5-flash-lite                
 python src/compare_models.py --only google/gemini-2.5-flash-lite --prompt few     # prompt technique: few-shot
 python src/compare_models.py --only google/gemini-2.5-flash-lite --samples 3      # prompt technique: self-consistency
 python src/compare_models.py --only meta-llama/llama-3.3-70b-instruct anthropic/claude-haiku-4.5
+python src/fm_only_eval.py                                                        # rung below: FM alone on every passage
 python src/evaluate_hybrid.py --split dev --prompt zero --model meta-llama/llama-3.3-70b-instruct --workers 8 --freeze
 python src/evaluate_hybrid.py --split test --workers 8                            # TEST once with frozen settings
 python src/stress_eval.py --fm                                                    # stress set with the hybrid
@@ -114,7 +131,14 @@ Only `official_eval.py` and `evaluate_hybrid.py --split test` call `load_test()`
 | `src/router.py` | deterministic decision rules and passage ranking |
 | `src/pipeline.py` | end-to-end analysis used by BOTH the app and the evaluation |
 | `src/extract.py` | PDF / DOCX / TXT extraction with a refusal rule |
-| `src/evaluate_hybrid.py` | prompt ladder and T_REVIEW tuning on dev; one-shot hybrid test run |
+| `src/evaluate_hybrid.py` | threshold tuning and freezing on dev; one-shot hybrid test run |
+| `src/fm_only_eval.py` | baseline rung: the FM alone classifies every passage (no ML), dev subset only |
+| `src/business_case.py` · `config/business.json` | cost to serve per month from measured rates and stated assumptions |
+| `src/make_report.py` | builds `results/report_tables.md` and `figures/` from the result files |
+| `src/check_balance.py` | OpenRouter credit left and project spend |
+| `docs/PRODUCT.md` | product documentation: persona, I/O, architecture, metrics targeted vs reached, risks |
+| `data/` | CUAD raw + processed files and their explainer |
+| `results/` | every eval output, FM cache and call log (inputs to the report) |
 | `src/stress_eval.py` · `eval/` | 50-case stress set (paraphrases, hard negatives, prompt injections), labels fixed first |
 | `prompts/` | system prompt and few-shot examples (the same text can be pasted into the Anthropic Console) |
 | `demo/` | two CUAD test contracts and a fictional catering supply contract (with and without an injection) |
@@ -154,6 +178,14 @@ FM spend is under $5 a month. The ranking holds when the loss per missed clause 
 REVIEW cases end with a lawyer.
 
 ![monthly cost](figures/fig3_monthly_cost.png)
+
+**Abstention** (test): 41 of 102 contracts went to REVIEW. The 61 decided contracts were all correct, and every one
+of the 34 contracts the FM alone would have got wrong landed in REVIEW. The cost is a high review load.
+
+**Why retrieve first** (dev subset, same model and prompt): letting Gemini 2.5 Flash-Lite judge every passage alone
+needs 11 calls per contract, finds fewer LD contracts (hit@5 36/47 vs 43/47) and half its FLAGs are wrong (precision
+51% vs 100%), so its avoidable cost is $134 per contract against $31 for the hybrid. Self-consistency (3 answers,
+majority vote) gained one LD contract but sent more contracts to REVIEW and cost 2.6x more; it was not adopted.
 
 **Stress set** (50 clauses written before any run): the hybrid misses none of 20 paraphrased LD clauses or 10 LD clauses
 carrying injected instructions (ML only: 11/20 and 3/10 silent misses) and flags none of 20 hard negatives.

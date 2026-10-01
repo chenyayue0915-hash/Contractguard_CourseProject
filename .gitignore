@@ -1,6 +1,4 @@
-# data that must be downloaded (see README)
-data/raw/CUADv1.json
-data/processed/
+# data is committed on purpose (CUAD v1, CC BY 4.0; see data/README.md)
 # local environment
 .venv/
 __pycache__/

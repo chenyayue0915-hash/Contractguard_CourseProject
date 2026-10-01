@@ -122,6 +122,15 @@ def test_self_consistency_votes_and_repairs_missing_ids():
     assert out["status"] == "ok" and out["repaired"] and c.n == 4
     assert out["results"][1]["label"] == "LD" and out["results"][0]["label"] == "NOT_LD"
 
+def test_fm_only_rule_needs_valid_confident_ld():
+    from fm_only_eval import decide_fm_only
+    ld = lambda conf, valid: {"label": "LD", "confidence": conf, "evidence": "x", "valid": valid}
+    assert decide_fm_only({"results": {0: ld(0.9, True)}, "failed": False})[0] == "FLAG"
+    assert decide_fm_only({"results": {0: ld(0.9, False)}, "failed": False})[0] == "REVIEW"   # no valid quote
+    assert decide_fm_only({"results": {}, "failed": True})[0] == "REVIEW"                     # call failed
+    assert decide_fm_only({"results": {0: {"label": "NOT_LD", "confidence": 0.9, "evidence": "", "valid": True}},
+                           "failed": False})[0] == "NO_FLAG"
+
 def test_prompt_lists_every_id():
     assert "ids: 0, 1" in build_user_message(PASSAGES)
 
@@ -242,5 +251,11 @@ def test_pipeline_with_fake_fm_confirms_paraphrase():
                 res.append({"chunk_id": int(cid), "label": "LD" if q in body else "NOT_LD",
                             "confidence": 0.9, "evidence": q if q in body else ""})
             return {"results": res}, 3000, 600
+    # The demo's LD clause is a paraphrase the ML model scores low. Whether the FM alone may FLAG it depends on the
+    # frozen T_FLAG_MIN; with the frozen value (0.7) it must become REVIEW, never NO_FLAG, and be shown first.
+    cg.settings = dict(cg.settings, FM_CONF=0.9, T_FLAG_MIN=0.7)
+    out = cg.analyze_text(text, fm_verifier=FMVerifier(client=Oracle()))
+    assert out["label"] == "REVIEW" and out["reason"] == "fm_ld_ml_low" and out["top"][0]["fm_label"] == "LD"
+    cg.settings = dict(cg.settings, FM_CONF=0.5, T_FLAG_MIN=0.0)        # an FM-trusting setting flags it outright
     out = cg.analyze_text(text, fm_verifier=FMVerifier(client=Oracle()))
     assert out["label"] == "FLAG" and out["reason"] == "fm_confirmed" and out["top"][0]["fm_label"] == "LD"

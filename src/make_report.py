@@ -57,10 +57,84 @@ def data_design_section():
             "Recall alone is won by flagging everything, so each metric is paired with a cost of being wrong: **hit@5** is "
             "recall at a fixed review budget (5 passages per contract), reported next to contract-level precision and false "
             "positive chunks per non-LD contract; for the routed system, silent misses (LD contract labelled NO_FLAG) are "
-            "capped at 5% on dev and FLAG precision and REVIEW rate are reported beside them.", "",
+            "capped at 5% on dev and FLAG precision and REVIEW rate are reported beside them. Silent misses alone also have a "
+            "trivial winner (send every contract to REVIEW), which is why the REVIEW rate and its cost are always shown next to "
+            "them and why thresholds are chosen by total business cost.", "",
             md_table(pd.DataFrame(rows), ["design", "cv_hit", "cv_prec", "cv_fp", "te_hit", "te_prec", "te_fp"],
                      ["design", "dev 5-fold CV hit@5", "dev contract precision", "dev FP chunks / non-LD contract",
                       "test hit@5", "test contract precision", "test FP chunks / non-LD contract"]), ""]
+
+def cost_formula_section(mc, bad):
+    """Watch-out 5 / feedback: cost per contract = calls x tokens x price, next to what OpenRouter actually billed."""
+    rows = []
+    for (_, r), b in zip(mc.iterrows(), bad):
+        if b or pd.isna(r.get("openrouter_in")) or pd.isna(r.get("tokens_in_per_call")): continue
+        if pd.notna(r.get("calls_per_contract")): calls = r["calls_per_contract"]
+        else:
+            f = str(r.get("fm_call_failures", "0/0")).split("/"); calls = int(f[1]) / max(r.get("n_contracts", 107), 1)
+        per_call = (r["tokens_in_per_call"] * r["openrouter_in"] + r["tokens_out_per_call"] * r["openrouter_out"]) / 1e6
+        rows.append({"model": r["label"], "prompt": r["prompt"], "calls": f"{calls:.2f}",
+                     "tin": f"{r['tokens_in_per_call']:,.0f}", "tout": f"{r['tokens_out_per_call']:,.0f}",
+                     "price": f"${r['openrouter_in']:.2f} / ${r['openrouter_out']:.2f}", "est": usd(calls * per_call),
+                     "billed": usd(r["cost_per_contract_usd"]),
+                     "ratio": f"{r['cost_per_contract_usd'] / max(calls * per_call, 1e-12):.1f}x"})
+    if not rows: return []
+    return ["### 4a. FM cost per contract in one line (Class 5)", "",
+            "cost per contract = FM calls per contract x (input tokens x input price + output tokens x output price). "
+            "Calls per contract is below 1 for the hybrid because contracts with an ML score >= 0.88 skip the FM. "
+            "'billed' is what OpenRouter charged; a ratio above 1 means the call was routed to a provider dearer than the "
+            "cheapest listed price.", "",
+            md_table(pd.DataFrame(rows), ["model", "prompt", "calls", "tin", "tout", "price", "est", "billed", "ratio"],
+                     ["model", "prompt", "FM calls / contract", "input tokens / call", "output tokens / call",
+                      "$ per 1M tokens in / out (list)", "estimate / contract", "billed / contract", "billed vs estimate"]), ""]
+
+def rung_section(mc):
+    """What the narrow-ML retrieval rung buys over prompting the FM on every passage (same model, same prompt)."""
+    fo = mc[mc.prompt.astype(str).str.contains("no ML")]
+    if not len(fo): return ["## 2b. What the ML retrieval step buys", "",
+                            "TODO: run `python src/fm_only_eval.py` (FM alone on every passage, dev subset).", ""]
+    rows = []
+    for _, f in fo.iterrows():
+        h = mc[(mc.model == f.model) & (mc.prompt == "zero")]
+        for name, r in (("FM alone on every passage", f), ("Hybrid: ML picks ~20 candidates, FM verifies", h.iloc[0] if len(h) else None)):
+            if r is None: continue
+            calls = r.get("calls_per_contract")
+            rows.append({"model": r["label"], "design": name, "hit": r["hit@5"], "silent": r["silent_miss"],
+                         "fp": pct(r["flag_precision"]), "rv": pct(r["abstention_rate"]),
+                         "calls": "1 (or 0 if ML is sure)" if pd.isna(calls) else f"{calls:.1f}",
+                         "cost": usd(r["cost_per_contract_usd"]), "avoid": usd(r["avoidable_cost_per_contract"])})
+    return ["## 2b. What the ML retrieval step buys (dev subset)", "",
+            "Same model, same zero-shot prompt. The first row is the cheapest rung of the ladder: prompt the rented model on "
+            "every passage and let it decide alone (no ML, nothing tuned).", "",
+            md_table(pd.DataFrame(rows), ["model", "design", "hit", "silent", "fp", "rv", "calls", "cost", "avoid"],
+                     ["model", "design", "hit@5", "missed silently", "FLAG precision", "sent to a person",
+                      "FM calls / contract", "FM cost / contract", "avoidable cost / contract"]), ""]
+
+def abstention_section(s):
+    """Watch-out 7: how often the system abstains, and whether the abstained cases are the ones it would have got wrong.
+    'Forced' decision for a REVIEW case = what the FM alone said (LD -> FLAG, not LD -> NO_FLAG)."""
+    files = [("development (408)", RES / f"hybrid_dev_{s.get('PROMPT', 'zero')}_{str(s.get('MODEL', '')).replace('/', '--')}"
+              f"_s{s.get('SAMPLES', 1)}_contracts.csv")]
+    files += [("test (102)", p) for p in sorted(RES.glob("hybrid_test_*_contracts.csv")) if "INVALID" not in p.name]
+    rows = []
+    for name, p in files:
+        if not p.exists(): continue
+        r = pd.read_csv(p); dec = r[r.label != "REVIEW"]; ab = r[r.label == "REVIEW"]
+        ok_dec = ((dec.label == "FLAG") == (dec.has_ld == 1)).sum()
+        forced = np.where(ab.reason.isin(["fm_ld_ml_low", "fm_uncertain"]), "FLAG", "NO_FLAG")
+        ok_ab = ((forced == "FLAG") == (ab.has_ld == 1)).sum()
+        wrong_ab = len(ab) - ok_ab; wrong_all = wrong_ab + len(dec) - ok_dec
+        rows.append({"split": name, "abst": f"{len(ab)}/{len(r)} ({len(ab) / len(r):.0%})",
+                     "dec": f"{ok_dec}/{len(dec)} ({ok_dec / max(len(dec), 1):.0%})",
+                     "forced": f"{ok_ab}/{len(ab)} ({ok_ab / max(len(ab), 1):.0%})",
+                     "caught": f"{wrong_ab}/{wrong_all} ({wrong_ab / max(wrong_all, 1):.0%})"})
+    if not rows: return []
+    return ["## 1c. Abstention: how often, and on the right cases?", "",
+            "REVIEW is the system saying \"I am not sure\". For each REVIEW case the table also asks what would have happened "
+            "had the FM's own verdict been accepted instead (LD -> FLAG, not LD -> NO_FLAG).", "",
+            md_table(pd.DataFrame(rows), ["split", "abst", "dec", "forced", "caught"],
+                     ["split", "abstained (REVIEW)", "correct when it decided", "correct if forced to decide on REVIEW cases",
+                      "share of all would-be errors that landed in REVIEW"]), ""]
 
 def ladder_rows(cfg):
     """Keyword and ML-only systems re-labelled on the official test set with FROZEN settings (no tuning here)."""
@@ -180,6 +254,7 @@ if __name__ == "__main__":
                       "FM cost / contract", "avoidable cost / contract"]), ""]
     if not has_hybrid: out += ["TODO: hybrid row appears after `python src/evaluate_hybrid.py --split test`.", ""]
     out += data_design_section()
+    out += abstention_section(s)
     fig_ladder(lad)
     mcp = RES / "model_comparison.csv"
     if mcp.exists():
@@ -216,7 +291,8 @@ if __name__ == "__main__":
                     f"T_FLAG_MIN={s.get('T_FLAG_MIN')}) it scores hit@5 {d['hit@5']}, {d['silent_miss']} missed silently, "
                     f"FLAG precision {pct(d['flag_precision'])}, avoidable cost {usd(av)} per contract. The subset above (60 "
                     "non-LD contracts) is only used to rank models; differences of a few points in REVIEW rate are within noise.", ""]
-        variants = mc[(mc.prompt != "") & ~bad].groupby("model").filter(lambda g: g.prompt.nunique() >= 2)
+        variants = mc[(mc.prompt != "") & ~bad & ~mc.prompt.astype(str).str.contains("no ML")].groupby("model").filter(lambda g: g.prompt.nunique() >= 2)
+        out += rung_section(mc)
         out += ["## 3. Prompt techniques (Class 3)", "",
                 "All rows use the same structured-output contract: a forced `report_labels` tool (JSON schema), re-validated in "
                 "code, and an LD answer only counts when its evidence is an exact quote from the passage.", ""]
@@ -240,7 +316,7 @@ if __name__ == "__main__":
                         "`python src/compare_models.py --only <model> --samples 3`.", ""]
         fig_tradeoff(mc[~bad])
         bc = cost_rows(mc, cfg, cfg["contracts_per_month"]["value"])
-        out += ["## 4. Business case: cost to serve (Class 5)", "", (RES / "business_case.md").read_text() if (RES / "business_case.md").exists()
+        out += ["## 4. Business case: cost to serve (Class 5)", ""] + cost_formula_section(mc, bad) + ["### 4b. Cost to serve per month", "", (RES / "business_case.md").read_text() if (RES / "business_case.md").exists()
                 else "TODO: run `python src/business_case.py`.", ""]
         fig_monthly(bc)
     else:

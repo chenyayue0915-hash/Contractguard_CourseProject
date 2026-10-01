@@ -5,8 +5,10 @@ Monthly cost of each design for 4,000 contracts (USD). LD prevalence 12%; rates 
 | Llama 3.3 70B (open weights) (zero-shot) | $4.47 | $103,219 (1,906 reviews) | $0.00 (0) | $0.00 (0.0 missed) | **$103,224** | $25.81 |
 | Claude Haiku 4.5 (zero-shot) | $31.25 | $120,768 (2,230 reviews) | $0.00 (0) | $0.00 (0.0 missed) | **$120,799** | $30.20 |
 | Gemini 2.5 Flash-Lite (zero-shot) | $2.08 | $125,464 (2,316 reviews) | $0.00 (0) | $0.00 (0.0 missed) | **$125,466** | $31.37 |
+| Gemini 2.5 Flash-Lite (zero x3 vote) | $5.34 | $141,353 (2,610 reviews) | $0.00 (0) | $0.00 (0.0 missed) | **$141,358** | $35.34 |
 | Gemini 2.5 Flash-Lite (few-shot) | $2.12 | $144,530 (2,668 reviews) | $0.00 (0) | $0.00 (0.0 missed) | **$144,533** | $36.13 |
 | TF-IDF + LR | $0.00 | $93,274 (1,722 reviews) | $0.00 (0) | $204,255 (40.9 missed) | **$297,530** | $74.38 |
+| Gemini 2.5 Flash-Lite (zero, every passage, no ML) | $21.82 | $6,909 (128 reviews) | $528,000 (2,640) | $0.00 (0.0 missed) | **$534,931** | $134 |
 
 Sensitivity to the loss caused by one missed LD clause (total avoidable cost per month):
 
@@ -15,8 +17,10 @@ Sensitivity to the loss caused by one missed LD clause (total avoidable cost per
 | Llama 3.3 70B (open weights) (zero-shot) | $103,224 | $103,224 | $103,224 |
 | Claude Haiku 4.5 (zero-shot) | $120,799 | $120,799 | $120,799 |
 | Gemini 2.5 Flash-Lite (zero-shot) | $125,466 | $125,466 | $125,466 |
+| Gemini 2.5 Flash-Lite (zero x3 vote) | $141,358 | $141,358 | $141,358 |
 | Gemini 2.5 Flash-Lite (few-shot) | $144,533 | $144,533 | $144,533 |
 | TF-IDF + LR | $134,125 | $297,530 | $910,296 |
+| Gemini 2.5 Flash-Lite (zero, every passage, no ML) | $534,931 | $534,931 | $534,931 |
 
 Sensitivity to the review escalation rate (share of REVIEW cases that still end in a paid lawyer consult):
 
@@ -25,8 +29,10 @@ Sensitivity to the review escalation rate (share of REVIEW cases that still end 
 | Llama 3.3 70B (open weights) (zero-shot) | $7,944 | $103,224 | $198,503 |
 | Claude Haiku 4.5 (zero-shot) | $9,321 | $120,799 | $232,277 |
 | Gemini 2.5 Flash-Lite (zero-shot) | $9,653 | $125,466 | $241,279 |
+| Gemini 2.5 Flash-Lite (zero x3 vote) | $10,879 | $141,358 | $271,837 |
 | Gemini 2.5 Flash-Lite (few-shot) | $11,120 | $144,533 | $277,945 |
 | TF-IDF + LR | $211,430 | $297,530 | $383,629 |
+| Gemini 2.5 Flash-Lite (zero, every passage, no ML) | $528,553 | $534,931 | $541,308 |
 
 One REVIEW costs $54.17, so cutting the REVIEW rate by one percentage point saves about $2,167 a month; compare that with the FM spend column when judging a more expensive verifier.
 
