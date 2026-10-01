@@ -1,0 +1,42 @@
+{
+  "run": "hybrid_dev_zero_meta-llama--llama-3.3-70b-instruct_s1",
+  "contracts": 408,
+  "ld_contracts": 47,
+  "hit@5": "43/47",
+  "hit@5_rate": 0.9148936170212766,
+  "flag_precision": 0.84,
+  "flag_recall": 0.44680851063829785,
+  "abstention_rate": 0.5269607843137255,
+  "silent_miss": "0/47",
+  "ld_not_flagged_that_went_to_review": 1.0,
+  "ld_review_rate": 0.5531914893617021,
+  "ld_silent_rate": 0.0,
+  "nonld_review_rate": 0.5235457063711911,
+  "nonld_false_flag_rate": 0.0110803324099723,
+  "fm_calls": 388,
+  "fm_failures": 0,
+  "cost_per_contract_usd": 0.0012894579289215685,
+  "latency_p50_s": 20.4385,
+  "latency_p95_s": 33.842949999999995,
+  "label_table": {
+    "FLAG": {
+      "0": 4,
+      "1": 21
+    },
+    "NO_FLAG": {
+      "0": 168,
+      "1": 0
+    },
+    "REVIEW": {
+      "0": 189,
+      "1": 26
+    }
+  },
+  "fm_chunks_judged": 7711,
+  "fm_precision": 0.08008898776418243,
+  "fm_recall": 0.7741935483870968,
+  "fm_invalid_evidence_rate": 0.24135021097046414,
+  "T_REVIEW": 0.85,
+  "FM_CONF": 0.9,
+  "T_FLAG_MIN": 0.7
+}

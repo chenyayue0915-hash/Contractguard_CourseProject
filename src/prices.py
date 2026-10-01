@@ -86,7 +86,17 @@ if __name__ == "__main__":
     ap.add_argument("--tokens-in", type=int, default=typ.get("tokens_in", 3800))
     ap.add_argument("--tokens-out", type=int, default=typ.get("tokens_out", 800))
     ap.add_argument("--contracts-per-month", type=int, default=4000)
+    ap.add_argument("--from-log", action="store_true", help="use the mean tokens per call measured in results/fm_calls.jsonl")
+    ap.add_argument("--calls", type=int, default=89, help="FM calls in one compare_models.py run (dev subset = 89)")
     a = ap.parse_args()
+    if a.from_log and (ROOT / "results" / "fm_calls.jsonl").exists():
+        live = [json.loads(l) for l in open(ROOT / "results" / "fm_calls.jsonl")]
+        live = [r for r in live if not r.get("cached") and r.get("status") == "ok" and r.get("in_tokens")]
+        if live:
+            a.tokens_in = round(sum(r["in_tokens"] for r in live) / len(live))
+            a.tokens_out = round(sum(r["out_tokens"] for r in live) / len(live))
+            print(f"Measured from {len(live)} logged calls: {a.tokens_in:,} tokens in, {a.tokens_out:,} out per call "
+                  "(thinking models such as GPT-5 / Gemini 3.x / DeepSeek V4 usually produce 2-4x more output).")
     rows, src = price_table(a.refresh)
     if a.update_snapshot:
         if src.startswith("live"): update_snapshot(rows); print("config/models.json snapshot updated")
@@ -94,6 +104,7 @@ if __name__ == "__main__":
     for r in rows:
         r["cost_per_contract"] = call_cost(r["openrouter_in"], r["openrouter_out"], a.tokens_in, a.tokens_out)
         r["monthly_cost"] = r["cost_per_contract"] * a.contracts_per_month
+        r["run_cost"] = r["cost_per_contract"] * a.calls
         r["price_gap"] = ("" if r["official_in"] is None else
                           ("differs from official" if abs(r["openrouter_in"] - r["official_in"]) > 1e-6 or
                            abs(r["openrouter_out"] - r["official_out"]) > 1e-6 else "same as official"))
@@ -102,15 +113,15 @@ if __name__ == "__main__":
     shown = src if src.startswith("live") else f"OpenRouter snapshot {load_models().get('prices_checked_on')} (live refresh failed: {src.replace('none (offline: ', '').rstrip(')')})"
     head = (f"Prices: {shown}. Assumed FM call: {a.tokens_in:,} tokens in + {a.tokens_out:,} out (one per contract, "
             f"bypassed contracts cost $0). Scenario: {a.contracts_per_month:,} contracts per month.\n\n")
-    lines = ["| model | tier | official in / out | OpenRouter in / out | est. cost per contract | per month | notes |",
-             "|---|---|---|---|---|---|---|"]
+    lines = [f"| model | tier | official in / out | OpenRouter in / out | est. cost per contract | per month | one comparison run ({a.calls} calls) | notes |",
+             "|---|---|---|---|---|---|---|---|"]
     for r in rows:
         note = "; ".join(x for x in [r["price_gap"] if r["price_gap"] == "differs from official" else "", r["official_note"],
                                      "" if r["on_openrouter"] in (None, True) else "NOT listed on OpenRouter",
                                      "" if r["tools"] in (None, True) else "no tool calling"] if x)
         lines.append(f"| {r['label']} | {r['tier']} | {fmt(r['official_in'])} / {fmt(r['official_out'])} | "
                      f"{fmt(r['openrouter_in'])} / {fmt(r['openrouter_out'])} | ${r['cost_per_contract']:.4f} | "
-                     f"${r['monthly_cost']:,.2f} | {note} |")
+                     f"${r['monthly_cost']:,.2f} | ${r['run_cost']:.2f} | {note} |")
     table = head + "\n".join(lines) + "\n\nPrices are USD per 1M tokens. Sources: " + \
         ", ".join(sorted({r["official_source"] for r in rows if r["official_source"]})) + ", https://openrouter.ai/api/v1/models\n"
     (ROOT / "results" / "price_table.md").write_text(table); print(table)

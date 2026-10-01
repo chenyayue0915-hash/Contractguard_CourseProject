@@ -1,0 +1,32 @@
+{
+  "note": "Assumptions for the cost-to-serve model (src/business_case.py). Every value marked ASSUMPTION must be replaced by a figure you can cite, or kept and named as an assumption in the report. Change a value here and rerun; nothing else needs editing.",
+  "currency": "USD",
+  "contracts_per_month": {
+    "value": 4000,
+    "source": "ASSUMPTION: scenario of 1,000 SMEs x 4 vendor contracts per month"
+  },
+  "ld_prevalence": {
+    "value": 0.12,
+    "source": "CUAD v1: 61 of 510 contracts contain an LD clause (data in this repo)"
+  },
+  "review_minutes_per_contract": {
+    "value": 10,
+    "source": "ASSUMPTION: an owner reads the 5 highlighted passages and decides"
+  },
+  "reviewer_cost_per_hour": {
+    "value": 25,
+    "source": "ASSUMPTION: value of the owner's time per hour"
+  },
+  "lawyer_consult_cost": {
+    "value": 200,
+    "source": "ASSUMPTION: one short lawyer review of one flagged clause"
+  },
+  "loss_per_missed_ld_clause": {
+    "value": 5000,
+    "source": "ASSUMPTION, illustrative: problem statement cites a LegalShield study in which ~20% of small businesses lost over $5,000 to preventable legal problems"
+  },
+  "review_escalation_rate": {
+    "value": 0.25,
+    "source": "ASSUMPTION: share of REVIEW cases in which the owner, unsure after reading, still pays for a lawyer consult"
+  }
+}

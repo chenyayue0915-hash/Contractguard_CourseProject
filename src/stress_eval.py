@@ -38,7 +38,8 @@ if __name__ == "__main__":
                         samples=s.get("SAMPLES", 1), provider=s.get("PROVIDER", "openrouter"),
                         cache_path=RES / "fm_cache.jsonl", log_path=RES / "fm_calls.jsonl")
         per = fm_by_case(cases, fm)
-        cases["hybrid"] = [decide(p, per[i], s["T_BYPASS"], s.get("T_REVIEW", 0.3), s["FM_CONF"])[0] for i, p in enumerate(cases.p)]
+        cases["hybrid"] = [decide(p, per[i], s["T_BYPASS"], s.get("T_REVIEW", 0.3), s["FM_CONF"], s.get("T_FLAG_MIN", 0.0))[0]
+                           for i, p in enumerate(cases.p)]
         cases["fm_label"] = [next(iter(per[i]["results"].values()), {}).get("label") for i in range(len(cases))]
         systems.append("hybrid")
     rows = []

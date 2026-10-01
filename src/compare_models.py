@@ -66,8 +66,9 @@ if __name__ == "__main__":
     ptab = {r["id"]: r for r in price_table()[0]}
     rows = []
     base = ml_only_row(df, contracts, settings); s = eh.summarise(base, "ml_only")
+    CLASS_RATES = ("ld_review_rate", "ld_silent_rate", "nonld_review_rate", "nonld_false_flag_rate")
     rows.append({"model": "ML only (no FM)", "label": "TF-IDF + LR", "prompt": "", **{k: s[k] for k in
-                 ("hit@5", "hit@5_rate", "flag_precision", "flag_recall", "silent_miss", "abstention_rate")},
+                 ("hit@5", "hit@5_rate", "flag_precision", "flag_recall", "silent_miss", "abstention_rate") + CLASS_RATES},
                  "cost_per_contract_usd": 0.0})
     for m in cfg["candidates"]:
         mid = m["id"]
@@ -84,8 +85,8 @@ if __name__ == "__main__":
             sys.exit(key_problem() or "OPENROUTER_API_KEY is missing.")
         print(f"\nRunning {mid} ({a.prompt}-shot) on {len(contracts)} contracts ...", flush=True)
         lat, outs = prefetch(df, settings, fm, a.workers)
-        t, _ = eh.tune_t_review(df, contracts, settings, fm)
-        res, _ = eh.run(df, contracts, dict(settings, T_REVIEW=t), fm)
+        best, _, avoid = eh.tune(df, contracts, settings, fm)
+        res, _ = eh.run(df, contracts, dict(settings, **best), fm)
         s = eh.summarise(res, mid); s.update(eh.fm_component(res, df))
         repairs = sum(1 for o in outs if o.get("repaired"))
         if not lat:                                               # everything cached: use logged latencies
@@ -100,8 +101,9 @@ if __name__ == "__main__":
                      "openrouter_in": pr.get("openrouter_in"), "openrouter_out": pr.get("openrouter_out"),
                      "price_note": pr.get("official_note", ""),
                      **{k: s.get(k) for k in ("hit@5", "hit@5_rate", "flag_precision", "flag_recall", "silent_miss",
-                                              "abstention_rate", "fm_precision", "fm_recall", "fm_invalid_evidence_rate")},
-                     "fm_call_failures": f"{s['fm_failures']}/{s['fm_calls']}", "fm_repairs": repairs, "T_REVIEW": t,
+                                              "abstention_rate", "fm_precision", "fm_recall", "fm_invalid_evidence_rate")
+                        + CLASS_RATES},
+                     "fm_call_failures": f"{s['fm_failures']}/{s['fm_calls']}", "fm_repairs": repairs, **best, "avoidable_cost_per_contract": avoid,
                      "cost_per_contract_usd": s["cost_per_contract_usd"],
                      "tokens_in_per_call": np.mean([o["in_tokens"] for o in calls]) if calls else 0,
                      "tokens_out_per_call": np.mean([o["out_tokens"] for o in calls]) if calls else 0,
@@ -109,7 +111,10 @@ if __name__ == "__main__":
                      "latency_p95_s": float(np.percentile(lat, 95)) if lat else None})
         print(eh.readable(s, f"{m.get('label', mid)} ({m.get('tier', '')})", a.contracts_per_month))
         print(f"  Answers that needed repair calls                 : {repairs}")
-    out = pd.DataFrame(rows)
+        print(f"  Thresholds chosen on dev by business cost        : T_REVIEW={best['T_REVIEW']}, FM_CONF={best['FM_CONF']}, "
+              f"T_FLAG_MIN={best['T_FLAG_MIN']}")
+        print(f"  Avoidable cost per contract (config/business.json): ${avoid:.2f}")
+    out = pd.DataFrame(rows); out["n_contracts"] = len(contracts); out["n_ld"] = n_ld
     # Keep rows from earlier runs (other models / prompts); a model re-run with the same prompt replaces its old row.
     prev_path = RES / "model_comparison.csv"
     if prev_path.exists() and not a.full:

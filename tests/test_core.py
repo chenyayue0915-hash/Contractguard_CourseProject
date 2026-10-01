@@ -44,6 +44,18 @@ def test_fm_confirmed_needs_valid_evidence():
     assert decide(0.2, good, 0.88, 0.3)[0] == "FLAG"
     assert decide(0.2, bad, 0.88, 0.3) == ("REVIEW", "fm_uncertain")
 
+def test_fm_only_ld_with_low_ml_goes_to_review():
+    good = OK({1: {"label": "LD", "confidence": 0.9, "evidence": "x", "valid": True}})
+    assert decide(0.01, good, 0.88, 0.3, 0.5, T_FLAG_MIN=0.1) == ("REVIEW", "fm_ld_ml_low")
+    assert decide(0.15, good, 0.88, 0.3, 0.5, T_FLAG_MIN=0.1) == ("FLAG", "fm_confirmed")
+
+def test_business_cost_prefers_fewer_unneeded_lawyer_calls():
+    from business_case import load_business, avoidable_cost_per_contract
+    cfg = load_business()
+    base = {"ld_flag": 0.9, "ld_review": 0.1, "ld_silent": 0.0, "non_flag": 0.5, "non_review": 0.0}
+    better = dict(base, non_flag=0.05, non_review=0.45)
+    assert avoidable_cost_per_contract(better, cfg) < avoidable_cost_per_contract(base, cfg)
+
 def test_fm_failure_is_never_no_flag():
     assert decide(0.01, {"status": "api_error: Timeout", "results": {}}, 0.88, 0.3) == ("REVIEW", "fm_unavailable")
 

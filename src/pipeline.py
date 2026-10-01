@@ -13,7 +13,11 @@ MAX_CAND, K_SHOW = 30, 5
 def load_settings():
     s = json.load(open(ROOT / "results" / "frozen_settings.json"))
     s.setdefault("T_REVIEW_ML", 0.10)            # written by oof_analysis.py (dev only)
-    s.setdefault("T_REVIEW", 0.30); s.setdefault("FM_CONF", 0.5)   # T_REVIEW is tuned by evaluate_hybrid.py --split dev
+    s.setdefault("T_REVIEW", 0.30); s.setdefault("FM_CONF", 0.5); s.setdefault("T_FLAG_MIN", 0.0)   # T_REVIEW is tuned by evaluate_hybrid.py --split dev
+    # Display order only: any valid FM "LD" answer at confidence >= RANK_CONF moves to the top of the 5 passages shown.
+    # Kept separate from the routing threshold FM_CONF: on dev, ranking with the tuned FM_CONF (0.9) lowered hit@5 from
+    # 43/47 to 41/47 while leaving every FLAG / REVIEW / NO_FLAG label unchanged.
+    s.setdefault("RANK_CONF", 0.5)
     return s
 
 def candidates(texts, probs, n_cand):
@@ -30,8 +34,8 @@ def analyze_scored(texts, probs, settings, fm_verifier=None, tag=""):
     if fm_verifier is not None and max_p < settings["T_BYPASS"]:       # rule 1 bypasses the FM entirely
         fm = fm_verifier.verify([(i, texts[i]) for i in cand], tag=tag)
     t_review = settings["T_REVIEW"] if fm_verifier is not None else settings["T_REVIEW_ML"]
-    label, reason = decide(max_p, fm, settings["T_BYPASS"], t_review, settings["FM_CONF"])
-    order = rank(len(texts), probs, fm, settings["FM_CONF"])
+    label, reason = decide(max_p, fm, settings["T_BYPASS"], t_review, settings["FM_CONF"], settings.get("T_FLAG_MIN", 0.0))
+    order = rank(len(texts), probs, fm, settings.get("RANK_CONF", 0.5))
     fr = fm["results"] if fm else {}
     top = [{"chunk": i, "p": probs[i], "fm_label": fr.get(i, {}).get("label"),
             "fm_conf": fr.get(i, {}).get("confidence"), "evidence": fr.get(i, {}).get("evidence", ""),

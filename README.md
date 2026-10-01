@@ -81,6 +81,15 @@ silent misses, abstention rate, FM precision/recall, failed calls, billed cost p
 monthly projection (`--contracts-per-month`, default 4,000 = 1,000 SMEs x 4 contracts) of FM spend and of REVIEW cases a
 person must read. Model ids that OpenRouter does not list, or that lack tool calling, are skipped with a note.
 
+### Numbers and figures for the report
+```bash
+python src/business_case.py     # cost to serve per month: FM spend + owner review time + unneeded lawyer consults + expected loss
+python src/make_report.py       # results/report_tables.md + figures/fig1..3.png (ladder, model trade-off, monthly cost)
+```
+`config/business.json` holds every business assumption (contracts per month, minutes per review, hourly value, lawyer
+consult cost, loss per missed clause) with its source or an ASSUMPTION tag. The REVIEW / FLAG thresholds are chosen on
+the development split by minimising that cost, with at most 5% of LD contracts allowed to end as NO_FLAG.
+
 ### Train / test discipline
 `src/common.py` owns the split. `load_dev()` returns only the 408 train contracts and fails if a test contract appears.
 Only `official_eval.py` and `evaluate_hybrid.py --split test` call `load_test()`, and only with settings read from

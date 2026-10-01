@@ -3,43 +3,194 @@
   "default_model": "anthropic/claude-haiku-4.5",
   "prices_checked_on": "2026-09-29",
   "price_unit": "USD per 1M tokens (standard / pay-as-you-go tier)",
-  "typical_call": {"tokens_in": 3800, "tokens_out": 800, "note": "one FM call = ~20 candidate passages + prompt; replace with measured values from results/fm_calls.jsonl"},
+  "typical_call": {
+    "tokens_in": 3800,
+    "tokens_out": 800,
+    "note": "one FM call = ~20 candidate passages + prompt; replace with measured values from results/fm_calls.jsonl"
+  },
   "note": "official = the model maker's own price page; openrouter = what OpenRouter charges (refresh live with: python src/prices.py --refresh). compare_models.py uses the cost OpenRouter actually bills. 'extra' is passed to OpenRouter as-is (e.g. keep reasoning effort low so hidden thinking tokens stay cheap).",
   "candidates": [
-    {"id": "anthropic/claude-sonnet-5.5", "label": "Claude Sonnet 5.5", "tier": "premium", "enabled": true,
-     "official": {"in": 2.00, "out": 10.00, "source": "https://platform.claude.com/docs/en/about-claude/pricing"},
-     "openrouter": {"in": 2.00, "out": 10.00}},
-    {"id": "google/gemini-3.8-flash", "label": "Gemini 3.8 Flash", "tier": "premium", "enabled": true,
-     "official": {"in": 0.75, "out": 3.75, "source": "https://ai.google.dev/gemini-api/docs/pricing",
-                  "note": "price rises to $1.50 in / $7.50 out from 2027-01-01"},
-     "openrouter": {"in": 0.75, "out": 3.75}, "extra": {"reasoning": {"effort": "low"}}},
-    {"id": "anthropic/claude-haiku-4.5", "label": "Claude Haiku 4.5", "tier": "mid", "enabled": true,
-     "official": {"in": 1.00, "out": 5.00, "source": "https://platform.claude.com/docs/en/about-claude/pricing"},
-     "openrouter": {"in": 1.00, "out": 5.00}},
-    {"id": "openai/gpt-5-mini", "label": "GPT-5 mini", "tier": "mid", "enabled": true,
-     "official": {"in": 0.25, "out": 2.00, "source": "https://developers.openai.com/api/docs/pricing"},
-     "openrouter": {"in": 0.25, "out": 2.00}, "extra": {"reasoning": {"effort": "low"}}},
-    {"id": "openai/gpt-5.6-luna", "label": "GPT-5.6 Luna", "tier": "mid", "enabled": true,
-     "official": {"in": 0.20, "out": 1.20, "source": "https://developers.openai.com/api/docs/pricing"},
-     "openrouter": {"in": 0.20, "out": 1.20}, "extra": {"reasoning": {"effort": "low"}}},
-    {"id": "google/gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash-Lite", "tier": "mid", "enabled": true,
-     "official": {"in": 0.25, "out": 1.50, "source": "https://ai.google.dev/gemini-api/docs/pricing"},
-     "openrouter": {"in": 0.25, "out": 1.50}},
-    {"id": "deepseek/deepseek-v4.1-flash", "label": "DeepSeek V4.1 Flash", "tier": "budget", "enabled": true,
-     "official": {"in": 0.30, "out": 1.20, "source": "https://api-docs.deepseek.com/quick_start/pricing",
-                  "note": "official = peak-hour rate; off-peak is half ($0.15 / $0.60)"},
-     "openrouter": {"in": 0.30, "out": 1.20}},
-    {"id": "google/gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash-Lite", "tier": "budget", "enabled": true,
-     "official": {"in": 0.10, "out": 0.40, "source": "https://ai.google.dev/gemini-api/docs/pricing"},
-     "openrouter": {"in": 0.10, "out": 0.40}},
-    {"id": "openai/gpt-5-nano", "label": "GPT-5 nano", "tier": "budget", "enabled": true,
-     "official": {"in": 0.05, "out": 0.40, "source": "https://developers.openai.com/api/docs/pricing"},
-     "openrouter": {"in": 0.05, "out": 0.40}, "extra": {"reasoning": {"effort": "low"}}},
-    {"id": "meta-llama/llama-3.3-70b-instruct", "label": "Llama 3.3 70B (open weights)", "tier": "open-weights", "enabled": true,
-     "official": null, "official_note": "open weights: no maker price; cost depends on the host (could also be self-hosted)",
-     "openrouter": {"in": 0.10, "out": 0.32}},
-    {"id": "qwen/qwen3.7-flash", "label": "Qwen3.7 Flash", "tier": "budget", "enabled": true,
-     "official": null, "official_note": "maker price not checked (Alibaba Cloud Model Studio)",
-     "openrouter": {"in": 0.03, "out": 0.13}}
+    {
+      "id": "anthropic/claude-sonnet-5.5",
+      "label": "Claude Sonnet 5.5",
+      "tier": "premium",
+      "enabled": true,
+      "official": {
+        "in": 2.0,
+        "out": 10.0,
+        "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+      },
+      "openrouter": {
+        "in": 2.0,
+        "out": 10.0
+      }
+    },
+    {
+      "id": "google/gemini-3.8-flash",
+      "label": "Gemini 3.8 Flash",
+      "tier": "premium",
+      "enabled": true,
+      "official": {
+        "in": 0.75,
+        "out": 3.75,
+        "source": "https://ai.google.dev/gemini-api/docs/pricing",
+        "note": "price rises to $1.50 in / $7.50 out from 2027-01-01"
+      },
+      "openrouter": {
+        "in": 0.75,
+        "out": 3.75
+      },
+      "extra": {
+        "reasoning": {
+          "effort": "low"
+        }
+      }
+    },
+    {
+      "id": "anthropic/claude-haiku-4.5",
+      "label": "Claude Haiku 4.5",
+      "tier": "mid",
+      "enabled": true,
+      "official": {
+        "in": 1.0,
+        "out": 5.0,
+        "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+      },
+      "openrouter": {
+        "in": 1.0,
+        "out": 5.0
+      }
+    },
+    {
+      "id": "openai/gpt-5-mini",
+      "label": "GPT-5 mini",
+      "tier": "mid",
+      "enabled": true,
+      "official": {
+        "in": 0.25,
+        "out": 2.0,
+        "source": "https://developers.openai.com/api/docs/pricing"
+      },
+      "openrouter": {
+        "in": 0.25,
+        "out": 2.0
+      },
+      "extra": {
+        "reasoning": {
+          "effort": "low"
+        }
+      }
+    },
+    {
+      "id": "openai/gpt-5.6-luna",
+      "label": "GPT-5.6 Luna",
+      "tier": "mid",
+      "enabled": false,
+      "official": {
+        "in": 0.2,
+        "out": 1.2,
+        "source": "https://developers.openai.com/api/docs/pricing"
+      },
+      "openrouter": {
+        "in": 0.2,
+        "out": 1.2
+      },
+      "extra": {
+        "reasoning": {
+          "effort": "low"
+        }
+      },
+      "observed": "2026-10-01: every call returned HTTP 404 from OpenRouter (no provider served it with forced tool calling); excluded"
+    },
+    {
+      "id": "google/gemini-3.1-flash-lite",
+      "label": "Gemini 3.1 Flash-Lite",
+      "tier": "mid",
+      "enabled": true,
+      "official": {
+        "in": 0.25,
+        "out": 1.5,
+        "source": "https://ai.google.dev/gemini-api/docs/pricing"
+      },
+      "openrouter": {
+        "in": 0.25,
+        "out": 1.5
+      }
+    },
+    {
+      "id": "deepseek/deepseek-v4.1-flash",
+      "label": "DeepSeek V4.1 Flash",
+      "tier": "budget",
+      "enabled": true,
+      "official": {
+        "in": 0.3,
+        "out": 1.2,
+        "source": "https://api-docs.deepseek.com/quick_start/pricing",
+        "note": "official = peak-hour rate; off-peak is half ($0.15 / $0.60)"
+      },
+      "openrouter": {
+        "in": 0.3,
+        "out": 1.2
+      }
+    },
+    {
+      "id": "google/gemini-2.5-flash-lite",
+      "label": "Gemini 2.5 Flash-Lite",
+      "tier": "budget",
+      "enabled": true,
+      "official": {
+        "in": 0.1,
+        "out": 0.4,
+        "source": "https://ai.google.dev/gemini-api/docs/pricing"
+      },
+      "openrouter": {
+        "in": 0.1,
+        "out": 0.4
+      }
+    },
+    {
+      "id": "openai/gpt-5-nano",
+      "label": "GPT-5 nano",
+      "tier": "budget",
+      "enabled": true,
+      "official": {
+        "in": 0.05,
+        "out": 0.4,
+        "source": "https://developers.openai.com/api/docs/pricing"
+      },
+      "openrouter": {
+        "in": 0.05,
+        "out": 0.4
+      },
+      "extra": {
+        "reasoning": {
+          "effort": "low"
+        }
+      }
+    },
+    {
+      "id": "meta-llama/llama-3.3-70b-instruct",
+      "label": "Llama 3.3 70B (open weights)",
+      "tier": "open-weights",
+      "enabled": true,
+      "official": null,
+      "official_note": "open weights: no maker price; cost depends on the host (could also be self-hosted)",
+      "openrouter": {
+        "in": 0.1,
+        "out": 0.32
+      }
+    },
+    {
+      "id": "qwen/qwen3.7-flash",
+      "label": "Qwen3.7 Flash",
+      "tier": "budget",
+      "enabled": true,
+      "official": null,
+      "official_note": "maker price not checked (Alibaba Cloud Model Studio)",
+      "openrouter": {
+        "in": 0.03,
+        "out": 0.13
+      }
+    }
   ]
 }

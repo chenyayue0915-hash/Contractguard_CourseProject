@@ -4,7 +4,8 @@ DEV (408 train contracts, out-of-fold ML scores):
     python src/evaluate_hybrid.py --split dev --prompt zero          # prompt ladder rung 1
     python src/evaluate_hybrid.py --split dev --prompt few           # rung 2
     python src/evaluate_hybrid.py --split dev --prompt few --samples 3   # optional: self-consistency (x3 cost)
-    python src/evaluate_hybrid.py --split dev --prompt few --freeze  # write T_REVIEW / prompt / model to frozen_settings.json
+    python src/evaluate_hybrid.py --split dev --prompt zero --model meta-llama/llama-3.3-70b-instruct --freeze
+                                                                     # write thresholds / prompt / model to frozen_settings.json
 TEST (102 contracts) — once, with frozen settings:
     python src/evaluate_hybrid.py --split test
 
@@ -14,11 +15,12 @@ To pick a model on cost vs quality first, run src/compare_models.py (dev subset,
 Costs about US$3 per full dev run with a Haiku-class model; cached calls are free and reproduce exactly.
 """
 import argparse, json, os, sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import numpy as np, pandas as pd
 from common import SEED, load_dev, load_test
 from fm_verify import FMVerifier, DEFAULT_MODEL, DEFAULT_PROVIDER, KEY_ENV
-from pipeline import analyze_scored, load_settings
+from pipeline import analyze_scored, load_settings, candidates
 
 RES = Path("results")
 
@@ -50,6 +52,23 @@ def run(df, contracts, settings, fm):
             cand_rows.append({"contract_id": cid, "chunk": i, "touch": touch[i]})
     return pd.DataFrame(rows), pd.DataFrame(cand_rows)
 
+def prefetch(df, settings, fm, workers=4):
+    """Make every FM call once, in parallel (answers land in the cache, so run() and tune() replay them);
+    returns the latencies of the live calls."""
+    jobs = []
+    for cid, g in df.groupby("contract_id", sort=False):
+        texts, probs = g.text.tolist(), g.p.tolist()
+        if max(probs) >= settings["T_BYPASS"]: continue            # bypassed contracts never call the FM
+        jobs.append((cid, [(i, texts[i]) for i in candidates(texts, probs, settings["N_CAND"])]))
+    done = [0]
+    def one(j):
+        o = fm.verify(j[1], tag=j[0]); done[0] += 1
+        if done[0] % 25 == 0 or done[0] == len(jobs): print(f"  FM calls done: {done[0]}/{len(jobs)}", flush=True)
+        return o
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
+        outs = list(ex.map(one, jobs))
+    return [o["latency_s"] for o in outs if not o["cached"]], outs
+
 def summarise(res, name):
     ld, non = res[res.has_ld == 1], res[res.has_ld == 0]
     flag = res.label == "FLAG"
@@ -60,6 +79,7 @@ def summarise(res, name):
          "abstention_rate": (res.label == "REVIEW").mean(),
          "silent_miss": f"{int((ld.label == 'NO_FLAG').sum())}/{len(ld)}",
          "ld_not_flagged_that_went_to_review": ((ld.label == "REVIEW").sum() / max((ld.label != "FLAG").sum(), 1)),
+         "ld_review_rate": (ld.label == "REVIEW").mean(), "ld_silent_rate": (ld.label == "NO_FLAG").mean(),
          "nonld_review_rate": (non.label == "REVIEW").mean(),
          "nonld_false_flag_rate": (non.label == "FLAG").mean(),
          "fm_calls": int(res.fm_used.sum()), "fm_failures": int((res.fm_used & (res.fm_status != "ok")).sum()),
@@ -102,16 +122,34 @@ def fm_component(res, df):
     return {"fm_chunks_judged": len(x), "fm_precision": tp / max(x.pred.sum(), 1), "fm_recall": tp / max(x.gold.sum(), 1),
             "fm_invalid_evidence_rate": x.invalid_evidence.sum() / max(x.raw_ld.sum(), 1)}
 
-def tune_t_review(df, contracts, settings, fm, grid=np.round(np.arange(0.05, 0.55, 0.05), 2), max_silent=0.05):
-    """Highest T_REVIEW whose dev silent-miss rate (LD contracts labelled NO_FLAG) is <= max_silent.
-    FM calls do not depend on T_REVIEW, so after the first pass every call is a cache hit."""
-    best = None; table = []
-    for t in grid:
-        s = dict(settings, T_REVIEW=float(t)); res, _ = run(df, contracts, s, fm)
-        ld = res[res.has_ld == 1]; silent = (ld.label == "NO_FLAG").mean()
-        table.append({"T_REVIEW": float(t), "silent_miss_rate": silent, "abstention_rate": (res.label == "REVIEW").mean()})
-        if silent <= max_silent: best = float(t)
-    return (best if best is not None else float(grid[0])), pd.DataFrame(table)
+def tune(df, contracts, settings, fm, max_silent=0.05,
+         grid_review=np.round(np.arange(0.05, 0.90, 0.05), 2), grid_conf=(0.5, 0.6, 0.7, 0.8, 0.9, 0.95),
+         grid_flag_min=(0.0, 0.02, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7)):
+    """Choose T_REVIEW, FM_CONF and T_FLAG_MIN on DEV by business cost (config/business.json):
+    minimise owner review time + unneeded lawyer consults + expected loss from missed clauses, subject to at most
+    `max_silent` of LD contracts ending as NO_FLAG. The FM is called once per contract; every threshold setting is then
+    replayed on the stored answers, so tuning costs nothing extra."""
+    from business_case import load_business, avoidable_cost_per_contract
+    from router import decide
+    cfg = load_business()
+    res, _ = run(df, contracts, settings, fm)
+    feats = [(r.has_ld, r.out_obj["max_p"], r.out_obj["fm_raw"]) for r in res.itertuples()]
+    fm_cost = res.cost_usd.mean(); table = []
+    for tr in grid_review:
+        for fc in grid_conf:
+            for tf in grid_flag_min:
+                lab = [(h, decide(p, f, settings["T_BYPASS"], float(tr), fc, tf)[0]) for h, p, f in feats]
+                ld = [l for h, l in lab if h == 1]; non = [l for h, l in lab if h == 0]
+                c = {"ld_flag": ld.count("FLAG") / len(ld), "ld_review": ld.count("REVIEW") / len(ld),
+                     "ld_silent": ld.count("NO_FLAG") / len(ld), "non_flag": non.count("FLAG") / len(non),
+                     "non_review": non.count("REVIEW") / len(non)}
+                table.append({"T_REVIEW": float(tr), "FM_CONF": fc, "T_FLAG_MIN": tf, **c,
+                              "avoidable_cost_per_contract": avoidable_cost_per_contract(c, cfg) + fm_cost})
+    t = pd.DataFrame(table)
+    ok = t[t.ld_silent <= max_silent]
+    best = (ok if len(ok) else t).sort_values(["avoidable_cost_per_contract", "T_REVIEW"], ascending=[True, False]).iloc[0]
+    return {k: float(best[k]) for k in ("T_REVIEW", "FM_CONF", "T_FLAG_MIN")}, \
+        t.sort_values("avoidable_cost_per_contract").reset_index(drop=True), float(best["avoidable_cost_per_contract"])
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
@@ -122,6 +160,7 @@ if __name__ == "__main__":
     ap.add_argument("--samples", type=int, default=1)
     ap.add_argument("--freeze", action="store_true", help="dev only: store tuned T_REVIEW + prompt + model")
     ap.add_argument("--force-rerun-test", action="store_true")
+    ap.add_argument("--workers", type=int, default=4, help="parallel FM calls (slow models such as Llama need this)")
     a = ap.parse_args()
     settings = load_settings()
     if a.split == "test":
@@ -147,10 +186,14 @@ if __name__ == "__main__":
         print(f"No {KEY_ENV[a.provider]} set: using cached FM results only; uncached calls will count as REVIEW.")
     df, contracts = scored_split(a.split)
     name = f"hybrid_{a.split}_{a.prompt}_{a.model.replace('/', '--')}_s{a.samples}"
+    print(f"{a.split}: {contracts.contract_id.nunique()} contracts, model {a.model}, {a.prompt}-shot; calling the FM "
+          f"with {a.workers} parallel workers (cached answers are free) ...", flush=True)
+    live_lat, _ = prefetch(df, settings, fm, a.workers)
     if a.split == "dev":
-        t, table = tune_t_review(df, contracts, settings, fm)
-        table.to_csv(RES / f"{name}_t_review_sweep.csv", index=False)
-        settings["T_REVIEW"] = t; print(f"tuned T_REVIEW on dev = {t}")
+        best, table, cost = tune(df, contracts, settings, fm)
+        table.to_csv(RES / f"{name}_threshold_sweep.csv", index=False)
+        settings.update(best)
+        print(f"tuned on dev by business cost: {best} -> avoidable cost ${cost:.2f} per contract (config/business.json)")
     res, _ = run(df, contracts, settings, fm)
     failed = int((res.fm_used & (res.fm_status != "ok")).sum())
     if failed:
@@ -158,7 +201,13 @@ if __name__ == "__main__":
         if a.split == "test":
             res.drop(columns=["out_obj"]).to_csv(RES / "hybrid_test_INVALID_contracts.csv", index=False)
             sys.exit("Test summary NOT written because some FM calls failed; fix the cause, then rerun.")
-    summ = summarise(res, name); summ.update(fm_component(res, df)); summ["T_REVIEW"] = settings["T_REVIEW"]
+    summ = summarise(res, name); summ.update(fm_component(res, df))
+    if not live_lat:                                              # everything cached: use the logged API latencies
+        log = [json.loads(l) for l in open(RES / "fm_calls.jsonl")] if (RES / "fm_calls.jsonl").exists() else []
+        live_lat = [r["latency_s"] for r in log if r.get("model") == a.model and not r.get("cached") and r.get("latency_s")]
+    if live_lat:                                                  # real API latency, not the near-zero cache replays
+        summ["latency_p50_s"], summ["latency_p95_s"] = float(np.median(live_lat)), float(np.percentile(live_lat, 95))
+    summ.update({k: settings.get(k) for k in ("T_REVIEW", "FM_CONF", "T_FLAG_MIN")})
     if a.split == "test":
         h = res[res.has_ld == 1].hit5.values; rng = np.random.default_rng(SEED)
         bs = [rng.choice(h, len(h)).mean() for _ in range(2000)]
@@ -171,5 +220,6 @@ if __name__ == "__main__":
     if a.split == "dev" and a.freeze:
         fz = json.load(open(RES / "frozen_settings.json"))
         fz.update({"T_REVIEW_frozen": settings["T_REVIEW"], "T_REVIEW": settings["T_REVIEW"], "PROMPT": a.prompt,
-                   "MODEL": a.model, "PROVIDER": a.provider, "SAMPLES": a.samples, "FM_CONF": settings["FM_CONF"]})
+                   "MODEL": a.model, "PROVIDER": a.provider, "SAMPLES": a.samples, "FM_CONF": settings["FM_CONF"],
+                   "T_FLAG_MIN": settings["T_FLAG_MIN"]})
         json.dump(fz, open(RES / "frozen_settings.json", "w"), indent=2); print("frozen ->", fz)
