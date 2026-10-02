@@ -131,6 +131,13 @@ def test_fm_only_rule_needs_valid_confident_ld():
     assert decide_fm_only({"results": {0: {"label": "NOT_LD", "confidence": 0.9, "evidence": "", "valid": True}},
                            "failed": False})[0] == "NO_FLAG"
 
+def test_command_line_checker_runs_without_a_key():
+    import subprocess, sys as _s
+    env = dict(os.environ, OPENROUTER_API_KEY="")
+    r = subprocess.run([_s.executable, str(ROOT / "src/check_contract.py"), str(ROOT / "demo/cuad_test_cooperation_agreement_LD.txt"),
+                        "--no-fm"], capture_output=True, text=True, env=env, cwd=ROOT)
+    assert r.returncode == 0 and "FLAG" in r.stdout and "Passages to read" in r.stdout
+
 def test_prompt_lists_every_id():
     assert "ids: 0, 1" in build_user_message(PASSAGES)
 

@@ -46,7 +46,8 @@ pytest -q
 ```
 
 After `cp .env.example .env`, paste your OpenRouter key after `OPENROUTER_API_KEY=` (optional). `streamlit run app.py`
-opens the app in the browser; try the files in `demo/`. Without a key it runs the ML model only. `pytest -q` runs 33
+opens the app in the browser; try the files in `demo/`. The same check runs in the terminal:
+`python src/check_contract.py demo/fresh_produce_supply_agreement.txt`. Without a key it runs the ML model only. `pytest -q` runs 34
 tests covering the chunker, decision rules, FM guardrails, OpenRouter parsing, prices, extraction and the split.
 (`python3 -m venv .venv && source .venv/bin/activate` works instead of conda if your `python3` is 3.10+.)
 
@@ -130,6 +131,7 @@ Only `official_eval.py` and `evaluate_hybrid.py --split test` call `load_test()`
 | `src/compare_models.py` | quality vs cost vs latency for every candidate model (dev only) |
 | `src/router.py` | deterministic decision rules and passage ranking |
 | `src/pipeline.py` | end-to-end analysis used by BOTH the app and the evaluation |
+| `src/check_contract.py` | the app in the terminal: `python src/check_contract.py <contract file>` prints the label, the reason and the passages |
 | `src/extract.py` | PDF / DOCX / TXT extraction with a refusal rule |
 | `src/evaluate_hybrid.py` | threshold tuning and freezing on dev; one-shot hybrid test run |
 | `src/fm_only_eval.py` | baseline rung: the FM alone classifies every passage (no ML), dev subset only |
